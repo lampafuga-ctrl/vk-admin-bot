@@ -1,0 +1,147 @@
+import vk_api
+from vk_api.longpoll import VkLongPoll, VkEventType
+import os
+
+TOKEN = os.getenv("TOKEN")  # токен из Railway
+
+ADMIN_IDS = [123456789]  # ВСТАВЬ СВОЙ VK ID
+
+vk_session = vk_api.VkApi(token=TOKEN)
+vk = vk_session.get_api()
+longpoll = VkLongPoll(vk_session)
+
+users = {}
+banned = set()
+
+def send(user_id, message):
+    vk.messages.send(
+        user_id=user_id,
+        message=message,
+        random_id=0
+    )
+
+print("Бот запущен...")
+
+for event in longpoll.listen():
+    if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+        user_id = event.user_id
+        text = event.text.lower()
+
+        # 🚫 Проверка бана
+        if user_id in banned:
+            continue
+
+        # 📌 Регистрация
+        if user_id not in users:
+            users[user_id] = {"balance": 0}
+
+        # ===== ОБЫЧНЫЕ КОМАНДЫ =====
+        if text == "старт":
+            send(user_id, "Привет 👋 Напиши 'баланс'")
+
+        elif text == "баланс":
+            balance = users[user_id]["balance"]
+            send(user_id, f"💰 Твой баланс: {balance}")
+
+        elif text == "помощь":
+            send(user_id,
+                 "Команды:\n"
+                 "старт\n"
+                 "баланс\n"
+                 "помощь")
+
+        # ===== АДМИНКА =====
+        elif user_id in ADMIN_IDS:
+
+            # ➕ добавить деньги
+            if text.startswith("/add"):
+                try:
+                    _, uid, amount = text.split()
+                    uid = int(uid)
+                    amount = int(amount)
+
+                    if uid not in users:
+                        users[uid] = {"balance": 0}
+
+                    users[uid]["balance"] += amount
+                    send(user_id, f"✅ +{amount} пользователю {uid}")
+
+                except:
+                    send(user_id, "❌ Пример: /add 123456 100")
+
+            # ➖ снять деньги
+            elif text.startswith("/remove"):
+                try:
+                    _, uid, amount = text.split()
+                    uid = int(uid)
+                    amount = int(amount)
+
+                    if uid in users:
+                        users[uid]["balance"] -= amount
+                        send(user_id, f"➖ -{amount} у {uid}")
+                    else:
+                        send(user_id, "❌ Пользователь не найден")
+
+                except:
+                    send(user_id, "❌ Пример: /remove 123456 100")
+
+            # 👁 посмотреть баланс
+            elif text.startswith("/bal"):
+                try:
+                    _, uid = text.split()
+                    uid = int(uid)
+
+                    if uid in users:
+                        bal = users[uid]["balance"]
+                        send(user_id, f"💰 Баланс {uid}: {bal}")
+                    else:
+                        send(user_id, "❌ Нет такого")
+
+                except:
+                    send(user_id, "❌ Пример: /bal 123456")
+
+            # 🚫 бан
+            elif text.startswith("/ban"):
+                try:
+                    _, uid = text.split()
+                    uid = int(uid)
+
+                    banned.add(uid)
+                    send(user_id, f"🚫 Забанен {uid}")
+
+                except:
+                    send(user_id, "❌ Пример: /ban 123456")
+
+            # ✅ разбан
+            elif text.startswith("/unban"):
+                try:
+                    _, uid = text.split()
+                    uid = int(uid)
+
+                    banned.discard(uid)
+                    send(user_id, f"✅ Разбанен {uid}")
+
+                except:
+                    send(user_id, "❌ Пример: /unban 123456")
+
+            # 📢 рассылка
+            elif text.startswith("/broadcast"):
+                try:
+                    msg = text.replace("/broadcast ", "")
+
+                    for uid in users:
+                        send(uid, f"📢 {msg}")
+
+                    send(user_id, "✅ Рассылка отправлена")
+
+                except:
+                    send(user_id, "❌ Ошибка рассылки")
+
+            # 📊 статистика
+            elif text == "/stats":
+                send(user_id,
+                     f"👥 Пользователей: {len(users)}\n"
+                     f"🚫 Забанено: {len(banned)}")
+
+        else:
+            send(user_id, "❓ Не понял команду. Напиши 'помощь'")
